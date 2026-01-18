@@ -1,0 +1,16 @@
+规则1：工程师评价我的方法没有按照类型封装成一个个模块，工程这样弄耦合度太高，实际使用很容易出问题的。不能一个变量说既被方法1用了，还同时在其他方法内使用。
+规则2：所有的模块都放在model中，然后主程序进行调用。
+规则3：每封装一个模块，保证整个项目中除了对应模块中出现该功能相关的函数，其他地方都是直接进行调用。
+规则4：每次修改，要保留原先的运行逻辑，保证程序整个的正常运行。
+规则5：每次修改需要完整进行，不要给我介绍下一步指令，也不要等我的下一步指令。
+规则6：更改后直接运行main.py测试,检查能否正常运行,如果有错误进行修改.运行环境为虚拟环境：& C:/ProgramData/miniconda3/envs/yolo/python.exe c:/Download/code/yueli/main.py
+
+其他信息：
+1.yolo模型的所有类如下：
+storage box
+comb clamp
+hair clipper
+lubricant
+instructions
+data line
+brush
