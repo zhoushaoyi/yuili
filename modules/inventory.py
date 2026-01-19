@@ -5,8 +5,9 @@ from typing import Dict, List, Tuple, Any
 class InventoryManager:
     """按配置管理每个storage box(track_id)的装配完成状态，并在消失时给出报警。"""
 
-    def __init__(self, spec: Dict[str, Any]):
+    def __init__(self, spec: Dict[str, Any], alert_display_time=90):
         self.spec = spec
+        self.alert_display_time = alert_display_time  # 存储报警时长参数
         # required: class key -> required qty (>0)
         self.required = {k: v['quantity'] for k, v in spec['class0']['contains'].items() if int(v['quantity']) > 0}
         self.names = {k: v['name'] for k, v in spec['class0']['contains'].items()}

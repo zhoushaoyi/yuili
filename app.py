@@ -209,4 +209,4 @@ def index():
 
 if __name__ == '__main__':
     # 生产环境部署建议：threads=3 以上，避免视频流阻塞心跳
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=2)

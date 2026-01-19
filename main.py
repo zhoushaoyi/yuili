@@ -10,9 +10,9 @@ def main():
     visualize_display = True
 
     # 视频路径
-    # video_path = r"data/1.mp4"
+    video_path = r"data/1.mp4"
     # video_path = r"D:\video\video_0010.mp4"
-    video_path = 0
+    # video_path = 0
 
     # 创建视频处理器
     processor = VideoProcessor(

@@ -406,7 +406,7 @@
           // 如果后端日志数量变少了(重启了)，重置计数
           if (response.logs.length < lastLogCount) {
             lastLogCount = 0;
-            $('#logOutput').empty();
+            // $('#logOutput').empty();
           }
           // 只追加新的日志
           if (response.logs.length > lastLogCount) {

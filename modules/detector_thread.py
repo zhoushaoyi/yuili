@@ -26,14 +26,18 @@ class DetectorThread(threading.Thread):
         model_path = self.args.get('model', 'data/best.pt')
         output_dir = self.args.get('output_dir', 'output')
         light_port = self.args.get('light_port', 'COM3')
+        output_name = self.args.get('output_name', 'alert')
         
+        # [核心修复] 将整个 args (包含所有配置参数) 传给 VideoProcessor
         self.processor = VideoProcessor(
             model_path=model_path,
             output_dir=output_dir,
-            light_port=light_port
+            light_port=light_port,
+            config=self.args  # <--- 新增这一行
         )
         
-        self.alert_manager = AlertManager(output_dir=output_dir)
+        # [修复] 传入 output_name_prefix
+        self.alert_manager = AlertManager(output_dir=output_dir, output_name_prefix=output_name)
         self.pre_buffer = deque(maxlen=1)
         self.cap_fps = 30.0
 
@@ -51,6 +55,10 @@ class DetectorThread(threading.Thread):
         
         video_source = self.args.get('video', '0')
         self.log(f"正在初始化视频源: {video_source}")
+        
+        # [参数修复] 获取前端传递的保存和翻转参数
+        save_enabled = self.args.get('save_results', True)
+        flip_code = int(self.args.get('flip', 0))
 
         try:
             if str(video_source).isdigit():
@@ -77,20 +85,30 @@ class DetectorThread(threading.Thread):
             return
 
         cap = self.processor.camera_manager.cap
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30
-        self.cap_fps = fps
-        self.pre_buffer = deque(maxlen=int(fps * 5))
+        file_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        self.cap_fps = file_fps
         
-        self.log("✓ 系统启动成功，检测进行中...")
+        # [核心修复] 获取前端设置的目标FPS，而不是使用文件原始FPS
+        target_fps = float(self.args.get('fps', 30.0))
+        self.pre_buffer = deque(maxlen=int(file_fps * 5))
+        
+        self.log(f"✓ 系统启动 | 目标FPS: {target_fps}")
 
         frame_count = 0
         while not self._stop_event.is_set() and self.processor.camera_manager.is_opened():
+            # [核心修复] 记录本帧开始时刻，用于后续计算实际处理耗时
+            frame_start_time = time.time()
+            
             self.processor.fps_manager.start_timer()
             
             success, frame = self.processor.camera_manager.read_frame()
             if not success:
                 self.log("⚠ 视频播放结束或流中断")
                 break
+            
+            # [参数修复] 应用图像翻转（如果前端设置了翻转）
+            if flip_code != 0:
+                frame = cv2.flip(frame, flip_code)
 
             try:
                 # 核心处理
@@ -108,24 +126,26 @@ class DetectorThread(threading.Thread):
                 
                 if alerts:
                     try:
-                        task = self.alert_manager.start_recording(annotated_frame, self.cap_fps, alerts)
-                        if task:
-                            self.alert_manager.write_pre_buffer(self.pre_buffer, task)
-                            
-                            # 格式化报警日志
-                            alert_str_list = []
-                            for item in alerts:
-                                if isinstance(item, dict):
-                                    tid = item.get('track_id', '?')
-                                    missing = item.get('missing', [])
-                                    missing_names = [m[1] for m in missing]
-                                    alert_str_list.append(f"ID{tid}缺:{','.join(missing_names)}")
-                                else:
-                                    alert_str_list.append(str(item))
-                            
-                            t = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            self.alerts.append({'time': t, 'alerts': alerts})
-                            self.log(f"✓ 告警: {'; '.join(alert_str_list)}")
+                        # [参数修复] 只在启用保存时才进行录制
+                        if save_enabled:
+                            task = self.alert_manager.start_recording(annotated_frame, self.cap_fps, alerts)
+                            if task:
+                                self.alert_manager.write_pre_buffer(self.pre_buffer, task)
+                        
+                        # 告警日志始终输出（无论是否保存视频）
+                        alert_str_list = []
+                        for item in alerts:
+                            if isinstance(item, dict):
+                                tid = item.get('track_id', '?')
+                                missing = item.get('missing', [])
+                                missing_names = [m[1] for m in missing]
+                                alert_str_list.append(f"ID{tid}缺:{','.join(missing_names)}")
+                            else:
+                                alert_str_list.append(str(item))
+                        
+                        t = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        self.alerts.append({'time': t, 'alerts': alerts})
+                        self.log(f"✓ 告警: {'; '.join(alert_str_list)}")
                     except Exception as e:
                         self.log(f"⚠ 告警记录异常: {e}")
                 
@@ -140,11 +160,19 @@ class DetectorThread(threading.Thread):
 
             self.processor.fps_manager.end_timer()
             
-            # 控制播放速度 (仅对视频文件有效，摄像头全速运行)
+            # =======================================================
+            # [核心修复] 使用前端设置的FPS，不受文件原始FPS限制
+            # =======================================================
+            processing_time = time.time() - frame_start_time
+            
             if not str(video_source).isdigit():
-                time.sleep(1 / fps if fps > 0 else 0.03)
+                # 视频文件模式：按前端设置的目标FPS（支持倍速播放）
+                target_interval = 1.0 / target_fps if target_fps > 0 else 0.033
+                wait_time = max(0.0001, target_interval - processing_time)
+                time.sleep(wait_time)
             else:
-                time.sleep(0.001)
+                # 摄像头模式：全速运行，仅极短休眠释放 CPU
+                time.sleep(0.0001)
 
         # 结束清理
         self.processor.release()

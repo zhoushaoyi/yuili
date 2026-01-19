@@ -7,8 +7,9 @@ from typing import List, Tuple
 class DetectionManager:
     """目标检测管理模块"""
     
-    def __init__(self, model_path):
+    def __init__(self, model_path, conf_threshold=0.5):
         self.model = YOLO(model_path)
+        self.conf_threshold = conf_threshold  # 存储置信度参数
         # 忽略区域，列表[ (x1,y1,x2,y2), ... ]，坐标为像素
         self.ignore_regions: List[Tuple[int,int,int,int]] = []
     
@@ -25,8 +26,11 @@ class DetectionManager:
                 return True
         return False
     
-    def process_frame(self, frame, confidence_threshold=0.6):
+    def process_frame(self, frame, confidence_threshold=None):
         """进行目标检测并进行置信度过滤"""
+        # [修复] 使用实例属性中存储的置信度，如果没有传入参数
+        if confidence_threshold is None:
+            confidence_threshold = self.conf_threshold
         results = self.model.predict(source=frame, verbose=False) #关闭YOLO调试信息
         boxes = results[0].boxes
         filtered_boxes = []

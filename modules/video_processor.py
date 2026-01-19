@@ -16,15 +16,38 @@ class VideoProcessor:
     核心资源容器：负责初始化所有模块，但不包含循环逻辑。
     """
     
-    def __init__(self, model_path, output_dir="output", light_port='COM3', light_enabled=True):
-        # 1. 基础模块
+    def __init__(self, model_path, output_dir="output", light_port='COM3', light_enabled=True, config=None):
+        # 防止 config 为 None
+        self.config = config if config else {}
+        
+        # --- 1. 解析参数 ---
+        # 置信度 (默认 0.5)
+        conf_threshold = float(self.config.get('conf_threshold', 0.5))
+        
+        # SORT 追踪参数
+        max_age = int(self.config.get('sort_max_age', 30))
+        min_hits = int(self.config.get('sort_min_hits', 5))
+        iou_threshold = float(self.config.get('sort_iou_threshold', 0.5))
+        
+        # 报警时长
+        alert_frames = int(self.config.get('alert_display_time', 90))
+        
+        # --- 2. 初始化模块 (传入参数) ---
         self.camera_manager = CameraManager()
-        self.detection_manager = DetectionManager(model_path)
+        
+        # [修复] 传入置信度
+        self.detection_manager = DetectionManager(model_path, conf_threshold=conf_threshold)
         self.fps_manager = FPSManager()
-        self.tracker_manager = TrackerManager(max_age=30, min_hits=5, iou_threshold=0.5)
+        
+        # [修复] 传入 SORT 参数
+        self.tracker_manager = TrackerManager(
+            max_age=max_age, 
+            min_hits=min_hits, 
+            iou_threshold=iou_threshold
+        )
         self.visualizer = Visualizer()
         
-        # 2. 加载业务配置 (会自动使用绝对路径查找)
+        # 加载业务配置 (会自动使用绝对路径查找)
         try:
             self.spec = load_spec('Configuration.json')
         except Exception as e:
@@ -32,7 +55,8 @@ class VideoProcessor:
             # 给一个默认空配置，防止程序直接崩溃
             self.spec = {'class0': {'name': 'storage box', 'contains': {}}}
         
-        self.inventory = InventoryManager(self.spec)
+        # [修复] 传入报警时长
+        self.inventory = InventoryManager(self.spec, alert_display_time=alert_frames)
         
         # 3. 硬件控制 (灯光)
         # 如果不需要灯光，light_enabled 设为 False 即可

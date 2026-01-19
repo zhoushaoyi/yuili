@@ -1,170 +1,131 @@
-"""
-告警管理器：统一处理告警片段的保存、管理、查询
-"""
-import os
 import cv2
+import os
+import queue
+import threading
 from datetime import datetime
-from typing import Dict, List, Optional
-from collections import deque
-
 
 class AlertManager:
-    """告警管理器 - 处理告警片段的保存和管理"""
-    
-    def __init__(self, output_dir: str = 'output', pre_seconds: int = 5, post_seconds: int = 5):
-        """
-        初始化告警管理器
-        
-        Args:
-            output_dir: 输出目录
-            pre_seconds: 告警前预录制时长（秒）
-            post_seconds: 告警后录制时长（秒）
-        """
+    def __init__(self, output_dir, output_name_prefix='alert'):
         self.output_dir = output_dir
-        self.pre_seconds = pre_seconds
-        self.post_seconds = post_seconds
-        self.save_tasks = []
-        self.alert_history = []
-        self._ensure_output_dir()
-    
-    def _ensure_output_dir(self):
-        """确保输出目录存在"""
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
-    
-    def start_recording(self, frame: object, fps: float, alerts: List[str]) -> Optional[Dict]:
-        """
-        启动告警片段录制
+        self.prefix = output_name_prefix  # 存储输出文件前缀
+        self.current_alert_file = None
+        self.recording_end_time = 0
         
-        Args:
-            frame: 当前帧（numpy array）
-            fps: 帧率
-            alerts: 告警信息列表
+        # [关键修复] 初始化任务字典，防止 "no attribute 'save_tasks'" 错误
+        self.save_tasks = {} 
         
-        Returns:
-            录制任务字典，包含 writer 和 metadata
-        """
-        if not alerts:
-            return None
+        # 异步写入队列
+        self.write_queue = queue.Queue(maxsize=300) 
+        self.is_running = True
         
-        try:
-            # 创建按天目录
-            date_dir = datetime.now().strftime('%Y%m%d')
-            save_dir = os.path.join(self.output_dir, date_dir)
-            os.makedirs(save_dir, exist_ok=True)
-            
-            # 生成文件名
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            clip_name = f"alert_{timestamp}.mp4"
-            clip_path = os.path.join(save_dir, clip_name)
-            
-            # 创建 VideoWriter
-            h, w = frame.shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(clip_path, fourcc, fps, (w, h))
-            
-            # 记录告警
-            self.alert_history.append({
-                'timestamp': timestamp,
-                'alerts': alerts,
-                'path': clip_path,
-                'start_time': datetime.now()
-            })
-            
-            # 创建任务
-            task = {
-                'writer': writer,
-                'remaining': int(self.post_seconds * fps),
-                'path': clip_path,
-                'alerts': alerts,
-                'start_frame': frame.copy()
-            }
-            
-            self.save_tasks.append(task)
-            return task
+        # 启动后台写入线程
+        self.writer_thread = threading.Thread(target=self._writer_worker, daemon=True)
+        self.writer_thread.start()
+
+        self._ensure_dir(os.path.join(output_dir, "videos"))
+
+    def _ensure_dir(self, path):
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+
+    def _writer_worker(self):
+        """后台消费者线程：处理硬盘IO"""
+        writers = {} # 存储路径与 VideoWriter 的映射
         
-        except Exception as e:
-            print(f"创建告警录制任务失败: {e}")
-            return None
-    
-    def write_frame(self, frame: object) -> None:
-        """
-        写入当前帧到所有活跃任务
-        
-        Args:
-            frame: 当前帧（numpy array）
-        """
-        for task in list(self.save_tasks):
+        while self.is_running:
             try:
-                task['writer'].write(frame)
-                task['remaining'] -= 1
-                
-                # 检查是否完成
-                if task['remaining'] <= 0:
-                    self._finalize_task(task)
+                task = self.write_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            cmd = task.get('cmd')
+            path = task.get('path')
             
+            try:
+                if cmd == 'OPEN':
+                    if path not in writers:
+                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        writers[path] = cv2.VideoWriter(path, fourcc, task['fps'], task['size'])
+                    
+                elif cmd == 'WRITE':
+                    if path in writers:
+                        writers[path].write(task['frame'])
+                        
+                elif cmd == 'CLOSE':
+                    if path in writers:
+                        writers[path].release()
+                        del writers[path]
+                        
+                elif cmd == 'STOP_THREAD':
+                    for w in writers.values(): w.release()
+                    break
             except Exception as e:
-                print(f"保存告警片段失败: {e}")
-                self._finalize_task(task)
-    
-    def _finalize_task(self, task: Dict) -> None:
-        """完成一个录制任务"""
-        try:
-            task['writer'].release()
-            self.save_tasks.remove(task)
-            print(f"✓ 告警片段已保存: {task['path']}")
-        except Exception as e:
-            print(f"关闭录制器失败: {e}")
-    
-    def write_pre_buffer(self, frame_buffer: deque, task: Optional[Dict]) -> None:
-        """
-        写入预缓冲的帧到任务
+                print(f"[AlertManager] 写入异常: {e}")
+            finally:
+                self.write_queue.task_done()
+
+    def start_recording(self, frame, fps, alerts):
+        """主线程调用：开启录制"""
+        now = datetime.now()
+        self.recording_end_time = now.timestamp() + 5.0 # 报警后持续录制5秒
         
-        Args:
-            frame_buffer: 预缓冲（deque）
-            task: 录制任务
-        """
-        if not task or not frame_buffer:
+        if self.current_alert_file:
+            return self.current_alert_file
+        
+        date_str = now.strftime('%Y%m%d')
+        time_str = now.strftime('%H%M%S')
+        save_dir = os.path.join(self.output_dir, date_str)
+        self._ensure_dir(save_dir)
+        
+        # [修复] 使用自定义前缀生成文件名
+        filepath = os.path.join(save_dir, f"{self.prefix}_{date_str}_{time_str}.mp4")
+        h, w = frame.shape[:2]
+        
+        self.write_queue.put({
+            'cmd': 'OPEN',
+            'path': filepath,
+            'fps': fps,
+            'size': (w, h)
+        })
+        
+        self.current_alert_file = filepath
+        # 将文件路径记录在任务字典中
+        self.save_tasks[filepath] = True 
+        return filepath
+
+    def write_pre_buffer(self, pre_buffer, task_file):
+        """写入预留缓冲"""
+        if not self.current_alert_file or task_file != self.current_alert_file:
             return
+        for f in list(pre_buffer):
+            self.write_queue.put({
+                'cmd': 'WRITE',
+                'path': task_file,
+                'frame': f.copy()
+            })
+
+    def write_frame(self, frame):
+        """持续写入当前帧"""
+        if not self.current_alert_file:
+            return
+
+        self.write_queue.put({
+            'cmd': 'WRITE',
+            'path': self.current_alert_file,
+            'frame': frame.copy()
+        })
         
-        try:
-            for buffered_frame in frame_buffer:
-                task['writer'].write(buffered_frame)
-        except Exception as e:
-            print(f"写入预缓冲失败: {e}")
-    
-    def cleanup(self) -> None:
-        """清理所有未完成的任务"""
-        for task in list(self.save_tasks):
-            self._finalize_task(task)
-    
-    def get_active_tasks(self) -> int:
-        """获取活跃任务数"""
-        return len(self.save_tasks)
-    
-    def list_alerts(self) -> List[Dict]:
-        """列出所有告警记录"""
-        return list(self.alert_history)
-    
-    def list_alert_files(self) -> List[Dict]:
-        """列出所有告警视频文件"""
-        files = []
-        try:
-            for day in sorted(os.listdir(self.output_dir)):
-                day_dir = os.path.join(self.output_dir, day)
-                if os.path.isdir(day_dir):
-                    for f in sorted(os.listdir(day_dir)):
-                        if f.lower().endswith('.mp4'):
-                            file_path = os.path.join(day_dir, f)
-                            file_size = os.path.getsize(file_path)
-                            files.append({
-                                'day': day,
-                                'name': f,
-                                'path': file_path,
-                                'size': file_size,
-                                'url': f'/download_alert?path={file_path}'
-                            })
-        except Exception as e:
-            print(f"列出告警文件失败: {e}")
-        
-        return files
+        if datetime.now().timestamp() > self.recording_end_time:
+            self.stop_recording()
+
+    def stop_recording(self):
+        if self.current_alert_file:
+            path = self.current_alert_file
+            self.write_queue.put({'cmd': 'CLOSE', 'path': path})
+            if path in self.save_tasks:
+                del self.save_tasks[path]
+            self.current_alert_file = None
+
+    def cleanup(self):
+        self.is_running = False
+        self.write_queue.put({'cmd': 'STOP_THREAD'})
