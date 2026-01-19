@@ -1,0 +1,15 @@
+{
+    "save_video": "False",
+    "output_dir": "output",
+    "flip": "0",
+    "alert_display_time": "90",
+    "light_port": "COM1",
+    "log_level": "DEBUG",
+    "video": "data\\1.mp4",
+    "output_name": "web_record",
+    "fps": "30",
+    "conf_threshold": "0.3",
+    "sort_max_age": "60",
+    "sort_min_hits": "5",
+    "sort_iou_threshold": "0.2"
+}

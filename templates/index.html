@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>产线防漏检测系统</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body, html {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background-color: #f4f6f9;
+    }
+        
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .top-section {
+      flex: 1; 
+      display: flex;
+      overflow: hidden;
+      min-height: 0;
+      position: relative;
+    }
+
+    .video-panel {
+      flex: 1;
+      background-color: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 核心修复：移除了 onerror 隐藏逻辑，增加 min-height 确保可见 */
+    #videoStream {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background-color: #111;
+      min-height: 200px;
+    }
+
+    .config-panel {
+      width: 320px;
+      background-color: #fff;
+      border-left: 1px solid #dee2e6;
+      display: flex;
+      flex-direction: column;
+      transition: margin-right 0.3s ease;
+      z-index: 20;
+    }
+
+    .config-header {
+      padding: 10px 15px;
+      background-color: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .config-controls {
+      padding: 15px;
+      background-color: #fff;
+      border-bottom: 1px solid #dee2e6;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .config-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+    }
+
+    .log-panel {
+      height: 200px;
+      min-height: 40px;
+      max-height: 80vh;
+      background-color: #212529;
+      color: #00ff00;
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid #444;
+      position: relative;
+      z-index: 30;
+      flex-shrink: 0;
+    }
+
+    .resize-handle {
+      height: 8px;
+      background-color: #343a40;
+      cursor: ns-resize;
+      width: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 40;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .resize-handle:hover,
+    .resize-handle.active {
+      background-color: #0d6efd;
+    }
+
+    .resize-handle::after {
+      content: "";
+      width: 40px;
+      height: 2px;
+      background-color: #6c757d;
+      border-radius: 1px;
+    }
+
+    .log-header {
+      padding: 12px 15px 5px 15px;
+      font-size: 0.9rem;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    #logOutput {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .toggle-config-btn {
+      position: absolute;
+      right: 320px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 25;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-right: none;
+      padding: 10px 5px;
+      cursor: pointer;
+      border-radius: 5px 0 0 5px;
+      box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+      transition: right 0.3s ease;
+    }
+
+    .main-container.config-closed .config-panel {
+      margin-right: -320px;
+    }
+
+    .main-container.config-closed .toggle-config-btn {
+      right: 0;
+    }
+
+    #statusOverlay {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="main-container" id="mainLayout">
+  <div class="toggle-config-btn" onclick="toggleConfig()">
+    <i class="bi bi-chevron-right" id="configIcon"></i>
+  </div>
+
+  <div class="top-section" id="topSection">
+    <div class="video-panel">
+      <img id="videoStream" src="" alt="等待启动...">
+      <div id="statusOverlay">
+        <span class="spinner-grow spinner-grow-sm text-success" role="status"></span> 系统运行中
+      </div>
+    </div>
+
+    <div class="config-panel">
+      <div class="config-header">
+        <span><i class="bi bi-sliders"></i> 参数配置</span>
+      </div>
+
+      <div class="config-controls">
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-primary" id="btnStart" onclick="startSystem()">
+            <i class="bi bi-play-fill"></i> 启动系统
+          </button>
+          <button type="button" class="btn btn-danger" id="btnStop" onclick="stopSystem()" disabled>
+            <i class="bi bi-stop-fill"></i> 停止系统
+          </button>
+        </div>
+      </div>
+
+      <div class="config-body">
+        <form id="configForm">
+          <div class="mb-3">
+            <label class="form-label">视频保存 (save-video)</label>
+            <select class="form-select" name="save_video">
+              <option value="True" selected>True</option>
+              <option value="False">False</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">输出目录</label>
+            <input type="text" class="form-control" name="output_dir" value="output">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">图像翻转</label>
+            <select class="form-select" name="flip">
+              <option value="0" selected>0 (不翻转)</option>
+              <option value="1">1 (水平)</option>
+              <option value="-1">-1 (垂直)</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">报警时长</label>
+            <input type="number" class="form-control" name="alert_display_time" value="90">
+          </div>
+
+          <div class="accordion" id="accordionAdvanced">
+            <div class="accordion-item border-0">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2 bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdvanced">
+                  <small>高级设置 (Advanced)</small>
+                </button>
+              </h2>
+              <div id="collapseAdvanced" class="accordion-collapse collapse" data-bs-parent="#accordionAdvanced">
+                <div class="accordion-body px-0">
+                  <div class="mb-3">
+                    <label class="form-label fw-bold text-success">Light Port</label>
+                    <input type="text" class="form-control" name="light_port" value="COM1" placeholder="e.g. COM1">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Log Level</label>
+                    <select class="form-select" name="log_level">
+                      <option value="INFO" selected>INFO</option>
+                      <option value="DEBUG">DEBUG</option>
+                    </select>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Video Source</label>
+                    <input type="text" class="form-control" name="video" value="0" placeholder="0 或 C:/path/to/video.mp4">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Output Name</label>
+                    <input type="text" class="form-control" name="output_name" value="web_record">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">FPS</label>
+                    <input type="number" class="form-control" name="fps" value="30.0">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Confidence Threshold</label>
+                    <input type="number" step="0.1" class="form-control" name="conf_threshold" value="0.6">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">SORT Max Age</label>
+                    <input type="number" class="form-control" name="sort_max_age" value="1000">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">SORT Min Hits</label>
+                    <input type="number" class="form-control" name="sort_min_hits" value="5">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">SORT IOU Threshold</label>
+                    <input type="number" step="0.1" class="form-control" name="sort_iou_threshold" value="0.2">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="log-panel" id="logPanel">
+    <div class="resize-handle" id="resizeHandle"></div>
+    <div class="log-header">
+      <span><i class="bi bi-terminal"></i> 运行日志</span>
+      <button class="btn btn-sm btn-outline-light py-0" onclick="clearLog()" style="font-size: 0.8rem;">清除</button>
+    </div>
+    <div id="logOutput"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<script>
+  // UI 拖拽和折叠逻辑
+  const logPanel = document.getElementById('logPanel');
+  const resizeHandle = document.getElementById('resizeHandle');
+  let isDragging = false;
+  
+  resizeHandle.addEventListener('mousedown', function(e) {
+    isDragging = true;
+    resizeHandle.classList.add('active');
+    document.body.style.cursor = 'ns-resize';
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    let newHeight = window.innerHeight - e.clientY;
+    if (newHeight < 40) newHeight = 40;
+    if (newHeight > window.innerHeight * 0.8) newHeight = window.innerHeight * 0.8;
+    logPanel.style.height = newHeight + 'px';
+  });
+  
+  document.addEventListener('mouseup', function() {
+    if (isDragging) {
+      isDragging = false;
+      resizeHandle.classList.remove('active');
+      document.body.style.cursor = 'default';
+    }
+  });
+  
+  function toggleConfig() {
+    document.getElementById('mainLayout').classList.toggle('config-closed');
+    document.getElementById('configIcon').classList.toggle('bi-chevron-right');
+    document.getElementById('configIcon').classList.toggle('bi-chevron-left');
+  }
+
+  // 核心逻辑
+  let logInterval;
+  let isSystemRunning = false;
+  let lastLogCount = 0;  // [新增] 用于日志去重
+
+  function startSystem() {
+    const formData = $('#configForm').serialize();
+    $('#btnStart').prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+    
+    // 清空日志状态
+    clearLog();
+    lastLogCount = 0;
+
+    $.post('/start_detection', formData, function(response) {
+      if (response.status === 'success') {
+        updateUiState(true);
+        // 添加时间戳防止浏览器缓存视频流
+        $('#videoStream').attr('src', "{{ url_for('video_feed') }}?t=" + new Date().getTime()).show();
+        $('#statusOverlay').fadeIn();
+        appendLog("[系统] 检测已启动");
+      } else {
+        alert('启动失败: ' + response.message);
+        updateUiState(false);
+      }
+    }).fail(function() {
+      alert('服务器无响应');
+      updateUiState(false);
+    });
+  }
+
+  function stopSystem() {
+    $('#btnStop').prop('disabled', true);
+    $.post('/stop_detection', function(response) {
+      updateUiState(false);
+      appendLog("[系统] " + response.message);
+    }).fail(function() {
+      updateUiState(false);
+      appendLog("[系统] 停止请求发送失败");
+    });
+  }
+
+  function updateUiState(running) {
+    isSystemRunning = running;
+    if (running) {
+      $('#btnStart').prop('disabled', true).html('<i class="bi bi-play-fill"></i> 启动系统');
+      $('#btnStop').prop('disabled', false).html('<i class="bi bi-stop-fill"></i> 停止系统');
+      if (!logInterval) startLogPolling();
+    } else {
+      $('#btnStart').prop('disabled', false).html('<i class="bi bi-play-fill"></i> 启动系统');
+      $('#btnStop').prop('disabled', true).html('<i class="bi bi-stop-fill"></i> 停止系统');
+      $('#statusOverlay').fadeOut();
+    }
+  }
+
+  function startLogPolling() {
+    if (logInterval) clearInterval(logInterval);
+    logInterval = setInterval(function() {
+      $.get('/get_logs', function(response) {
+        if (response.logs) {
+          // [核心修复] 日志去重逻辑
+          // 如果后端日志数量变少了(重启了)，重置计数
+          if (response.logs.length < lastLogCount) {
+            lastLogCount = 0;
+            $('#logOutput').empty();
+          }
+          // 只追加新的日志
+          if (response.logs.length > lastLogCount) {
+            const newLogs = response.logs.slice(lastLogCount);
+            newLogs.forEach(log => appendLog(log));
+            lastLogCount = response.logs.length;
+          }
+        }
+        if (isSystemRunning && response.is_running === false) {
+          updateUiState(false);
+          stopLogPolling();
+          appendLog("[警告] 后端检测意外停止");
+        }
+      });
+    }, 1000);
+  }
+
+  function stopLogPolling() {
+    if(logInterval) {
+      clearInterval(logInterval);
+      logInterval = null;
+    }
+  }
+
+  function appendLog(message) {
+    const logBox = $('#logOutput');
+    // 如果消息里没有时间戳（有些系统消息），加一个
+    let displayMsg = message;
+    if (!message.startsWith('[')) {
+      const timeStr = new Date().toLocaleTimeString();
+      displayMsg = `[${timeStr}] ${message}`;
+    }
+    logBox.append(`<div>${displayMsg}</div>`);
+    logBox.scrollTop(logBox[0].scrollHeight);
+  }
+
+  function clearLog() {
+    $('#logOutput').empty();
+    lastLogCount = 0;
+  }
+
+  window.addEventListener('beforeunload', function (event) {
+    navigator.sendBeacon('/shutdown');
+  });
+
+  // ==========================================
+  // [新增] 页面加载完成后，自动回填上次的配置
+  // ==========================================
+  $(document).ready(function() {
+    // 请求后端获取保存的配置
+    $.get('/get_user_config', function(config) {
+      if (config && Object.keys(config).length > 0) {
+        // 遍历配置项，自动匹配 name 属性相同的 input 或 select
+        for (let key in config) {
+          let $el = $(`[name="${key}"]`);
+          if ($el.length > 0) {
+            $el.val(config[key]);
+          }
+        }
+        appendLog("[系统] 已加载上次保存的配置参数");
+      }
+    });
+  });
+</script>
+</body>
+</html>

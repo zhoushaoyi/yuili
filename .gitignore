@@ -1,4 +1,45 @@
-".idea/" 
-"__pycache__/"   # ���� Python ���뻺��
-"*.pyc"         # ���� Python �����ļ�
-"data/" 
+# ===================== 基础忽略（必加）=====================
+# 忽略 IDE 配置文件夹（PyCharm/IDEA）
+.idea/
+# 忽略 VS Code 配置文件夹
+.vscode/
+# 忽略 Python 编译缓存（运行项目自动生成）
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+# 忽略系统临时文件
+.DS_Store       # Mac 系统
+Thumbs.db       # Windows 系统
+*.tmp
+*.temp
+
+# ===================== 视频文件忽略（核心需求）=====================
+# 忽略常见视频格式（按需添加/删除）
+*.mp4
+*.avi
+*.mov
+*.flv
+*.mkv
+*.wmv
+*.rmvb
+*.mpeg
+*.mpg
+# ===================== 可选：忽略其他无用文件/文件夹 =====================
+# 忽略日志文件
+*.log
+logs/
+# 忽略压缩包
+*.zip
+*.rar
+*.7z
+*.tar.gz
+# 忽略虚拟环境
+venv/
+env/
+# 忽略缓存文件夹
+cache/
+temp/
+# 忽略配置文件（如果有敏感信息，比如密码）
+config.ini
+.env
