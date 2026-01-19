@@ -40,6 +40,9 @@ env/
 # 忽略缓存文件夹
 cache/
 temp/
+output/
+data/1.mp4
+data/best.pt
 # 忽略配置文件（如果有敏感信息，比如密码）
 config.ini
 .env
