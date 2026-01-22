@@ -94,24 +94,73 @@ class DetectionManager:
         return np.empty((0, 6), dtype=float)
     
     @staticmethod
-    def assign_items_to_boxes(class0_boxes_xyxy, items_xyxycls):
+    def assign_items_to_boxes(class0_boxes_xyxy, items_xyxycls, debug=False):
         """将非class0物品分配到包含其中心点的class0框中。
-        输入:
-          class0_boxes_xyxy: ndarray N x 4 (x1,y1,x2,y2)
-          items_xyxycls: ndarray M x 6 (x1,y1,x2,y2,score,cls)
+        
+        参数:
+          class0_boxes_xyxy: ndarray N x 4 (x1,y1,x2,y2) - 追踪到的storage box框
+          items_xyxycls: ndarray M x 6 (x1,y1,x2,y2,score,cls) - 检测到的物品
+          debug: 是否打印调试信息
+          
         返回:
           dict box_index -> list of item rows
+          
+        说明:
+          - 只对class0框范围内的物品进行计数
+          - 使用中心点判断物品是否在class0框内
+          - 返回分配情况，外层根据配置进行计数
         """
         from collections import defaultdict as dd
         assign = dd(list)
+        
+        if debug:
+            print(f"\n[分配物品] 开始分配物品到class0框")
+            print(f"  class0框数量: {len(class0_boxes_xyxy)}")
+            print(f"  待分配物品数: {len(items_xyxycls)}")
+        
+        # 遍历每个追踪到的class0框
         for i, b in enumerate(class0_boxes_xyxy):
             x1, y1, x2, y2 = b
+            box_width = x2 - x1
+            box_height = y2 - y1
+            
+            if debug:
+                print(f"\n  框 {i}: 位置=({x1:.0f},{y1:.0f},{x2:.0f},{y2:.0f}) 大小={box_width:.0f}x{box_height:.0f}")
+            
+            matched_items = []
+            
+            # 检查每个物品是否在该框内
             for row in items_xyxycls:
                 ix1, iy1, ix2, iy2, score, cls_id = row
-                cx = (ix1 + ix2) / 2.0
-                cy = (iy1 + iy2) / 2.0
-                if cx >= x1 and cx <= x2 and cy >= y1 and cy <= y2:
+                
+                # 计算物品的中心点和尺寸
+                item_cx = (ix1 + ix2) / 2.0
+                item_cy = (iy1 + iy2) / 2.0
+                item_width = ix2 - ix1
+                item_height = iy2 - iy1
+                
+                # 判断物品中心点是否在class0框内
+                # 条件：中心点坐标在框的边界内
+                center_in_box = (item_cx >= x1 and item_cx <= x2 and 
+                                item_cy >= y1 and item_cy <= y2)
+                
+                if center_in_box:
                     assign[i].append(row)
+                    matched_items.append((int(cls_id), item_cx, item_cy, score))
+                    if debug:
+                        cls_name = f"class{int(cls_id)}"
+                        print(f"    ✓ {cls_name}: 中心({item_cx:.0f},{item_cy:.0f}) 置信度={score:.2f}")
+                elif debug:
+                    # 未匹配的物品也输出，便于调试
+                    cls_name = f"class{int(cls_id)}"
+                    print(f"    ✗ {cls_name}: 中心({item_cx:.0f},{item_cy:.0f}) 在框外")
+            
+            if debug and not matched_items:
+                print(f"    (框内未检测到物品)")
+        
+        if debug:
+            print(f"\n[分配结果] 总共分配了 {sum(len(v) for v in assign.values())} 个物品\n")
+        
         return assign
     
     def print_detection_info(self, filtered_boxes):

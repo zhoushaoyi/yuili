@@ -19,14 +19,29 @@ starting = False
 # 前端获取配置的接口
 @app.route('/get_user_config', methods=['GET'])
 def get_user_config():
-    # 获取保存的配置
+    """获取用户保存的检测参数配置（用于Web页面表单初始化）。
+    
+    说明:
+        - 返回 config/user_settings.json 中保存的参数
+        - 这些是用户在Web界面上设置的检测参数（FPS、置信度等）
+        - 与 Configuration.json (物品清单) 分离
+    """
     saved_config = load_user_settings()
-    # 如果没有保存过，可以用默认值填充 (可选)
     if not saved_config:
         saved_config = Config.DEFAULT_DETECTION_PARAMS
     return jsonify(saved_config)
+
 @app.route('/start_detection', methods=['POST'])
 def start_detection():
+    """启动检测线程。
+    
+    流程:
+        1. 保存当前Web界面参数到 user_settings.json
+        2. 创建 DetectorThread，其中会:
+           - 创建 VideoProcessor
+           - VideoProcessor 会强制重新加载 Configuration.json (业务配置)
+        3. 启动检测线程
+    """
     global detector
     global starting
     with detector_lock:
@@ -44,7 +59,10 @@ def start_detection():
                     pass
             args = request.form.to_dict()
             
-            # [新增] 启动前，保存当前参数到文件
+            # [关键] 启动前，保存当前Web界面参数到 config/user_settings.json
+            print(f"[Web API] 收到启动请求，当前参数:")
+            for k, v in sorted(args.items()):
+                print(f"  {k}: {v}")
             save_user_settings(args)
             
             # 参数类型转换和默认值处理
@@ -55,9 +73,14 @@ def start_detection():
             # 使用配置模块的默认值填充缺失参数
             config = Config.get_detection_config(args)
             
+            # [关键] 创建检测线程
+            # DetectorThread 会创建 VideoProcessor，
+            # 而 VideoProcessor 会强制重新加载 Configuration.json
+            print(f"[Web API] 创建 DetectorThread，准备加载业务配置...")
             detector = DetectorThread(config)
             detector.start()
             time.sleep(0.1)
+            print(f"[Web API] DetectorThread 已启动")
             return jsonify({'status': 'success', 'message': '检测线程已启动'})
         finally:
             starting = False

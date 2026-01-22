@@ -5,11 +5,11 @@
     "alert_display_time": "10",
     "light_port": "COM10",
     "log_level": "INFO",
-    "video": "data\\1.mp4",
+    "video": "data\\111.mp4",
     "output_name": "web_record",
-    "fps": "30",
+    "fps": "10",
     "conf_threshold": "0.5",
-    "sort_max_age": "60",
-    "sort_min_hits": "30",
+    "sort_max_age": "30",
+    "sort_min_hits": "5",
     "sort_iou_threshold": "0.2"
 }

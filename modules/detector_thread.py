@@ -23,23 +23,39 @@ class DetectorThread(threading.Thread):
         self.logs = deque(maxlen=200)
         self.alerts = []
         
+        # [调试] 记录启动参数
+        print(f"\n{'='*60}")
+        print(f"[DetectorThread] 初始化参数:")
+        for key, value in sorted(self.args.items()):
+            print(f"  {key}: {value}")
+        print(f"{'='*60}\n")
+        
         model_path = self.args.get('model', 'data/best.pt')
         output_dir = self.args.get('output_dir', 'output')
         light_port = self.args.get('light_port', 'COM3')
         output_name = self.args.get('output_name', 'alert')
         
+        # [新增] 获取调试模式标志
+        self.debug_mode = self.args.get('debug', False)
+        if isinstance(self.debug_mode, str):
+            self.debug_mode = self.debug_mode.lower() in ('true', '1', 'yes')
+        
         # [核心修复] 将整个 args (包含所有配置参数) 传给 VideoProcessor
+        # VideoProcessor 会使用这些参数创建检测、追踪、灯光等模块
         self.processor = VideoProcessor(
             model_path=model_path,
             output_dir=output_dir,
             light_port=light_port,
-            config=self.args  # <--- 新增这一行
+            config=self.args  # <--- 关键: 传递所有用户参数给 VideoProcessor
         )
         
         # [修复] 传入 output_name_prefix
         self.alert_manager = AlertManager(output_dir=output_dir, output_name_prefix=output_name)
         self.pre_buffer = deque(maxlen=1)
         self.cap_fps = 30.0
+        
+        print(f"[DetectorThread] 初始化完成，业务配置已加载")
+        print(f"[DetectorThread] 调试模式: {'启用' if self.debug_mode else '禁用'}")
 
     def log(self, msg: str):
         ts = datetime.now().strftime('%H:%M:%S')
@@ -112,8 +128,11 @@ class DetectorThread(threading.Thread):
 
             try:
                 # 核心处理
+                # [新增] 传递调试标志，便于观察检测和分配逻辑
                 annotated_frame, tracked_boxes, alerts = \
-                    self.processor.frame_processor.process_frame(frame, visualize=True)
+                    self.processor.frame_processor.process_frame(
+                        frame, visualize=True, debug=self.debug_mode
+                    )
                 
                 # 更新 Web 显示帧
                 ret, jpg = cv2.imencode('.jpg', annotated_frame)

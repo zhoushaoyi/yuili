@@ -1,13 +1,16 @@
 {
   "class0": {
-    "name": "storage box",
+    "name": "Storage tray",
     "contains": {
-      "class1": { "name": "comb clamp", "quantity": 3 },
-      "class2": { "name": "hair clipper", "quantity": 0},
-      "class3": { "name": "lubricant", "quantity": 1 },
-      "class4": { "name": "instructions", "quantity": 1 },
-      "class5": { "name": "data cable", "quantity": 1 },
-      "class6": { "name": "brush", "quantity": 0 }
+      "class1": { "name": "main unit", "quantity": 1 },
+      "class2": { "name": "fabric bag", "quantity": 1 },
+      "class3": { "name": "shaver", "quantity": 1 },
+      "class4": { "name": "engraving knife", "quantity": 1 },
+      "class5": { "name": "nose hair trimmer", "quantity": 1 },
+      "class6": { "name": "comb", "quantity": 1 },
+      "class7": { "name": "brush", "quantity": 1 },
+      "class8": { "name": "charger", "quantity": 0},
+      "class9": { "name": "charging cable", "quantity": 1 }
     }
   }
 }

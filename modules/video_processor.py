@@ -47,11 +47,16 @@ class VideoProcessor:
         )
         self.visualizer = Visualizer()
         
-        # 加载业务配置 (会自动使用绝对路径查找)
+        # [关键修复] 加载业务配置
+        # - 使用 force_reload=True 确保每次启动都重新读取最新的 Configuration.json
+        # - 这样修改配置后无需重启程序即可生效
         try:
-            self.spec = load_spec('Configuration.json')
+            self.spec = load_spec('Configuration.json', force_reload=True)
+            print(f"[配置加载] 成功加载 Configuration.json，物品清单: {list(self.spec['class0']['contains'].keys())}")
         except Exception as e:
-            print(f"⚠ 严重警告: 配置文件加载失败: {e}")
+            print(f"❌ 严重警告: 配置文件加载失败: {e}")
+            import traceback
+            traceback.print_exc()
             # 给一个默认空配置，防止程序直接崩溃
             self.spec = {'class0': {'name': 'storage box', 'contains': {}}}
         
